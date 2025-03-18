@@ -12,15 +12,15 @@ import (
 // отправляет их в канал ch. При этом после записи в канал для каждого числа
 // вызывается функция fn. Она служит для подсчёта количества и суммы
 // сгенерированных чисел.
-var mu sync.Mutex
 
 func Generator(ctx context.Context, ch chan<- int64, fn func(int64)) {
 	// 1. Функция Generator
 	var i int64 = 1
+	defer close(ch)
 	for {
 		select {
 		case <-ctx.Done():
-			close(ch)
+
 			return
 		case ch <- i:
 			fn(i)
@@ -32,13 +32,11 @@ func Generator(ctx context.Context, ch chan<- int64, fn func(int64)) {
 // Worker читает число из канала in и пишет его в канал out.
 func Worker(in <-chan int64, out chan<- int64) {
 	defer close(out)
-	for {
-		count, ok := <-in
-		if !ok {
-			return
-		}
+	for count := range in {
+		time.Sleep(1 * time.Millisecond)
 		out <- count
 	}
+
 }
 
 func main() {
@@ -52,6 +50,7 @@ func main() {
 	var inputCount int64 // количество сгенерированных чисел
 
 	// генерируем числа, считая параллельно их количество и сумму
+	var mu sync.Mutex
 
 	go Generator(ctx, chIn, func(i int64) {
 		mu.Lock()
@@ -83,8 +82,9 @@ func main() {
 		go func(in <-chan int64, i int) {
 			defer wg.Done()
 			for count := range in {
+				amounts[i]++
 				chOut <- count
-				amounts[i]++ // Увеличиваем счётчик для текущей горутины
+				// Увеличиваем счётчик для текущей горутины
 			}
 		}(out, i)
 	}
@@ -101,10 +101,8 @@ func main() {
 
 	// 5. Читаем числа из результирующего канала
 	for num := range chOut {
-		mu.Lock()
 		sum += num
 		count++
-		mu.Unlock()
 	}
 
 	fmt.Println("Количество чисел", inputCount, count)
